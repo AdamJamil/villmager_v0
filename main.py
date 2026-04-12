@@ -1,6 +1,6 @@
 """Entry point for the Villmage simulation."""
 
-import argparse
+import click
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -29,11 +29,10 @@ async def run_simulation(days: int):
         out.close()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Villmage — a village life simulation")
-    parser.add_argument("--days", type=int, default=1, help="Number of days to simulate (default: 1)")
-    args = parser.parse_args()
-    trio.run(run_simulation, args.days)
+@click.command()
+@click.option("--days", default=1, type=int, help="Number of days to simulate (default: 1)")
+def main(days: int):
+    trio.run(run_simulation, days)
 
 
 if __name__ == "__main__":

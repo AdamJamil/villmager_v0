@@ -6,7 +6,7 @@ import re
 import trio
 
 from data import Villager, Location
-from llm import sonnet_call, opus_call, cached_user_blocks
+from llm import gemini_call
 from prompts import (
     system_prompt,
     location_choice_user,
@@ -64,16 +64,7 @@ async def choose_location(
     locations: list[Location],
 ) -> Location:
     user_msg = location_choice_user(villager, day, phase, locations)
-    response = await sonnet_call(SYSTEM, user_msg)
-    loc = _match_location(response, locations)
-    if loc:
-        return loc
-    # Retry with stricter prompt
-    retry_msg = (
-        user_msg + "\n\nYou must respond with EXACTLY one of these location names:\n"
-        + "\n".join(f"- {l.name}" for l in locations)
-    )
-    response = await sonnet_call(SYSTEM, retry_msg)
+    response = await gemini_call(SYSTEM, user_msg)
     loc = _match_location(response, locations)
     return loc or random.choice(locations)
 
@@ -123,7 +114,7 @@ async def run_conversation(
 
     out.conversation_header(day, phase, location.name, [v.name for v in villagers])
 
-    for turn in range(1, MAX_TURNS + 1):
+    for _ in range(1, MAX_TURNS + 1):
         if len(present) < 2:
             break
 
@@ -133,8 +124,8 @@ async def run_conversation(
 
         async def _rate(v):
             char = rating_character(v)
-            blocks = cached_user_blocks(shared, char)
-            resp = await sonnet_call(SYSTEM, blocks, max_tokens=16)
+            text = "\n\n".join((shared, char))
+            resp = await gemini_call(SYSTEM, text, max_tokens=2)
             return _parse_rating(resp)
 
         ratings = await parallel_calls(present, _rate)
@@ -162,8 +153,8 @@ async def run_conversation(
         # 4. Speaker speaks (Opus)
         speak_shared = speaking_shared(day, phase, location, [v.name for v in present], history)
         speak_char = speaking_character(speaker)
-        speak_blocks = cached_user_blocks(speak_shared, speak_char)
-        utterance = await opus_call(SYSTEM, speak_blocks)
+        text = "\n\n".join((speak_shared, speak_char))
+        utterance = await gemini_call(SYSTEM, text)
 
         history.append(f"{speaker.name}: {utterance}")
         out.speech(day, speaker.name, max_score, utterance)
@@ -178,7 +169,7 @@ async def run_conversation(
     async def _save_mem(v):
         h = departure_history.get(v.name, history)
         user_msg = memory_save_user(v, day, phase, location, h)
-        summary = await sonnet_call(SYSTEM, user_msg)
+        summary = await gemini_call(SYSTEM, user_msg)
         tag = f"[Day {day}, {phase}] {summary}"
         v.memories.append(tag)
         return tag
